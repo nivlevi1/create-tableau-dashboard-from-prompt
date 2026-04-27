@@ -8,9 +8,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-    # These allow the DAG files to parse os.environ calls
-    # MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-    # MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     POSTGRES_USER: ${POSTGRES_USER}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   volumes:
@@ -67,17 +64,12 @@ services:
   python:
     container_name: python_runner
     build: ./python
-    environment:
-      FOREXRATE_API_KEY: ${FOREXRATE_API_KEY}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      GOOGLE_SERVICE_ACCOUNT_PATH: /app/service_account.json
     volumes:
       - .:/app
     networks:
       - etl_net
-    depends_on:
-      - postgres_db
+    command: >
+      bash -c "python /app/daily_rates_ingestion.py && sleep infinity"
     restart: always
 
 networks:
