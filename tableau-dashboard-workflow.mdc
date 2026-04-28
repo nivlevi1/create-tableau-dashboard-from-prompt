@@ -1,0 +1,281 @@
+---
+description: Tableau Dashboard Creation Workflow - Step-by-step process for creating Tableau .twb dashboards programmatically, from requirements through validation
+globs:
+alwaysApply: false
+---
+
+# Tableau Dashboard Creation Workflow
+
+Use this workflow when the user asks to create a new Tableau dashboard (.twb workbook). Follow the phases **in order** — do not skip ahead without explicit user approval at each gate.
+
+---
+
+## Phase 1: Examine Requirements
+
+**Goal:** Gather all inputs needed before design begins.
+
+### 1a. Identify the Data Source
+
+- Ask or determine: **published data source** (sqlproxy) or **direct connection** (Databricks, Excel, etc.)?
+- If published: get the data source name, server, site, revision from Tableau MCP (`list-datasources`, `get-datasource-metadata`) or from `context/dashboard_context/`.
+- If direct: identify the catalog, schema, and table/model (e.g. `your-catalog.marts.order_items_status`).
+- Read the relevant **domain rule** (see `AGENTS.md` Section 4) and any **context files** (Section 5) for metric definitions.
+
+### 1b. Define KPIs and Metrics
+
+- List each KPI/metric the dashboard must show.
+- Cross-reference `context/kpi_glossary.md` for official definitions, formulas, and filter rules.
+- For each metric, note: **name**, **formula/aggregation**, **data type**, **format** (currency, %, integer).
+
+### 1c. Define Visualizations
+
+For each worksheet planned, capture:
+
+| # | Worksheet name | Chart type | Rows (dimensions) | Cols (measures/dates) | Filters | Mark type |
+|---|---------------|------------|--------------------|-----------------------|---------|-----------|
+| 1 | e.g. "Revenue Trend" | Line | SUM(Revenue) | Month | Date range | Line |
+
+Supported mark types: `Bar`, `Line`, `Area`, `Circle`, `Text`, `Map`, `Pie`, `Gantt`, `Square`, `Shape`, `Polygon`, `Density`, `Automatic`.
+
+### 1d. Define Filters
+
+- Which fields should appear as dashboard filter controls?
+- Filter types: categorical (`checkdropdown`), date (relative-date), quantitative (range).
+- Default values or "all" selection.
+
+### 1e. Define Calculated Fields
+
+- Any calculated fields needed? (e.g. % change, period comparison, LOD expressions)
+- Reference `calculated-fields-xml-guide.md` and `calculated-fields-lod-ban-dashboards.md` from the tableau-twb skill.
+
+### 1f. Dashboard Metadata
+
+| Property | Value |
+|----------|-------|
+| **Dashboard name** | |
+| **Target size** | Desktop (1300x900) / Automatic / Custom |
+| **Audience** | Executive / Operational / Analytical |
+| **Color palette** | Default (Header #6F91DB, Canvas #F0F3FA, Cards #FFFFFF) or custom |
+
+### Gate 1: Requirements Summary
+
+Present a structured summary of all requirements back to the user. **Do not proceed until the user confirms.**
+
+---
+
+## Phase 2: ASCII Mockup
+
+**Goal:** Visualize the dashboard layout before writing any XML.
+
+### 2a. Draw the Wireframe
+
+Use ASCII art following the standard layout from `default-desktop-dashboard-layout.md`:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  TITLE ROW: "Dashboard Name | Subtitle"                            │
+└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ ┌────────────┐  ┌────────────────────────────────────────────────┐ │
+│ │ FILTERS    │  │  VIZ AREA                                      │ │
+│ │            │  │                                                 │ │
+│ │ • Filter 1 │  │  Row 1: [KPI / BAN cards]                     │ │
+│ │ • Filter 2 │  │  Row 2: [Chart A]  |  [Chart B]               │ │
+│ │ • Filter 3 │  │  Row 3: [Chart C]  |  [Chart D]               │ │
+│ │            │  │                                                 │ │
+│ └────────────┘  └────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 2b. Annotate the Mockup
+
+Below the wireframe, list:
+- Each zone with its **worksheet name**, **chart type**, and **key fields**.
+- Filter controls and their types.
+- Any show/hide buttons or dynamic zone visibility.
+
+### 2c. Zone Hierarchy (Plain Text)
+
+Include the container tree:
+
+```
+layout-basic (root)
+├── layout-flow [vert]            ← title + content
+│   ├── text (title)
+│   └── layout-flow [horz]       ← filters | viz
+│       ├── layout-flow [vert]   ← filters column (fixed-size)
+│       │   ├── filter: ...
+│       │   └── filter: ...
+│       └── layout-flow [vert]   ← viz column
+│           ├── layout-flow [horz]  ← row 1
+│           ├── layout-flow [horz]  ← row 2
+│           └── layout-flow [horz]  ← row 3
+```
+
+### Gate 2: Mockup Approval
+
+Present the ASCII mockup, annotation table, and zone hierarchy to the user. **Do not proceed until the user approves the layout.**
+
+---
+
+## Phase 3: Generate TWB
+
+**Goal:** Create a valid Tableau workbook XML file using the `tableau-twb` skill.
+
+### 3a. Read the Skill
+
+Read the tableau-twb skill file at `projects/delphi/.cursor/skills/tableau-twb/SKILL.md` and the relevant references:
+- `references/twb-comprehensive-reference.md` — full XML schema, generation DO/DON'T
+- `references/default-desktop-dashboard-layout.md` — zone hierarchy and coordinates
+- `references/calculated-fields-xml-guide.md` — if calculated fields are needed
+- `references/date-filter-dashboard-pattern.md` — if date filters are on the dashboard
+- `references/published-datasource.md` — if connecting to a published data source
+- `references/kpi-card-flerlage-twins.md` — BAN/KPI cards always use full comparison by default (§13.22)
+
+### 3b. Build the TWB XML
+
+Follow the skill's generation best practices:
+1. Use `xml.etree.ElementTree` or direct XML — never string concatenation for formulas.
+2. Use `&quot;` for all string values in parameters and filters.
+3. Include `<datasource-dependencies>` for every field used in views.
+4. Use unique integer zone IDs.
+5. Root dashboard zone: `x='0' y='0' w='100000' h='100000'`.
+6. Include `<windows>` with the active dashboard sheet.
+7. Apply the color palette from Phase 1 (default: header #6F91DB, canvas #F0F3FA, cards #FFFFFF).
+8. Set worksheet titles using per-worksheet `<layout-options>` (not global style-rule).
+
+### 3c. Write the File
+
+Save the `.twb` file to the project directory:
+- Location: `projects/delphi/` (root) or a designated dashboards folder.
+- Naming: `snake_case_dashboard_name.twb`.
+- Encoding: UTF-8 with XML declaration.
+
+---
+
+## Phase 4: Validate
+
+**Goal:** Verify the generated TWB passes automated XSD + structural validation before delivery.
+
+### 4a. Automated Validation (REQUIRED)
+
+Every generator script MUST include a `validate_twb()` call at the end of its `generate()` function. The validation runs two tiers:
+
+**Tier 1 — XSD Schema Validation** (catches D2E8DA72 errors):
+- Uses official Tableau XSD from `projects/delphi/.cursor/skills/tableau-twb/schemas/twb_2026.1.0.xsd`
+- Requires `xmlschema` Python library (`pip3 install xmlschema`)
+- Catches: element ordering, undeclared attributes/elements, invalid enumerations, content model violations
+- The XSD validates the **final** file on disk (after CDATA post-processing)
+
+**Tier 2 — Custom Structural Checks** (catches semantic issues XSD misses):
+- All worksheet names in dashboard zones exist in `<worksheets>`
+- All worksheet names in `<windows>` exist in `<worksheets>` or `<dashboards>`
+- No duplicate zone IDs
+- `<simple-id>` present on all worksheets and dashboards
+- Calculated field references in `<datasource-dependencies>` resolve to defined columns
+
+### 4b. Validation Behavior
+
+- If any Tier 1 or Tier 2 errors are found, the generator prints them and exits with code 1
+- Warnings (e.g., missing xmlschema library) are printed but do not block generation
+- The TWB file is NOT delivered to the user until validation passes
+
+### 4c. Version and Manifest Requirements
+
+- Workbook version: `18.1` (compatible with Tableau 2025.3+)
+- Use individual manifest entries (NOT `ManifestByVersion`, which requires version 26.1 + undocumented elements)
+- Include `WindowsPersistSimpleIdentifiers` in manifest and add `<simple-id>` to all worksheets and dashboards
+- Rounded corners: use `_.fcp.DashboardRoundedCorners.true...format` elements with post-processing string fixup
+- XSD validation (vendored `twb_2026.1.0.xsd`) runs as advisory — known version-mismatch errors are filtered
+
+### 4d. Fix Issues
+
+If validation finds problems, fix them in the generator code and re-run. Do NOT deliver the TWB until `Validation PASSED` appears in the output.
+
+---
+
+## Phase 5: Handoff
+
+**Goal:** Deliver the validated file to the user for testing in Tableau Desktop.
+
+### 5a. Summary
+
+Provide:
+- File path and name.
+- List of worksheets and dashboards included.
+- Data source connection details (what to connect when opening in Tableau Desktop).
+- Any manual steps needed (e.g. "authenticate to published data source on first open").
+
+### 5b. Testing Checklist for User
+
+Share this checklist:
+
+- [ ] Open the `.twb` file in Tableau Desktop (version 2025.3+ / 18.1+).
+- [ ] Verify data source connection resolves (prompted for credentials if published DS).
+- [ ] Check each worksheet renders correctly with expected chart type.
+- [ ] Verify KPI/BAN values are correct.
+- [ ] Test each filter (dropdown selections, date range).
+- [ ] Verify dashboard layout matches the approved mockup.
+- [ ] Check color palette and formatting.
+- [ ] Test any show/hide buttons or dynamic zone visibility.
+- [ ] Resize window to confirm layout handles proportional sizing.
+
+### 5c. Iterate
+
+If the user reports issues:
+1. Understand the problem (screenshot, error message, or description).
+2. Read the TWB XML to diagnose.
+3. Fix and re-validate (return to Phase 4).
+4. Deliver the updated file.
+
+### 5d. Self-Learn from User Fixes
+
+When the user manually fixes something in Tableau Desktop and saves:
+1. Ask which worksheet they modified (or detect from context).
+2. Read the modified worksheet XML from the saved TWB.
+3. Compare against unmodified worksheets or the generator's expected output.
+4. Identify the new/changed XML patterns.
+5. Update the generator code to apply the pattern globally.
+6. Document the learning in `references/programmatic-twb-learnings.md` (§25.x).
+7. Update `SKILL.md` with a one-line summary in Critical Structural Rules.
+8. Regenerate and verify.
+
+**Key principle:** Tableau Desktop is the source of truth. When generated XML doesn't produce the expected visual, ask the user to fix ONE worksheet manually, save, and point you to it. The diff reveals the correct XML.
+
+---
+
+## Phase 6: Post-Iteration Knowledge Capture
+
+**Goal:** After iteration cycles, ensure all learnings are persisted for future dashboards.
+
+### 6a. Review Error Log
+
+At the end of a dashboard creation session, review all errors encountered and fixes applied. For each:
+- Was the fix already documented in the skill? If not, add it.
+- Is the fix generalizable? If so, add it to `_basic_style()` or the appropriate builder function.
+
+### 6b. Update Skill References
+
+- Add new patterns to `references/programmatic-twb-learnings.md`.
+- Add one-line summaries to `SKILL.md` Critical Structural Rules.
+- Update the valid format attributes table (§24.13 / §25.15) if new attrs were discovered.
+
+### 6c. Validate XSD Compliance
+
+For any new style-rule elements or format attributes:
+1. Check the vendored XSD at `projects/delphi/.cursor/skills/tableau-twb/schemas/twb_2026.1.0.xsd` for the attribute/element enumeration.
+2. If valid in XSD, add to the generator and re-run to confirm `Validation PASSED`.
+3. If not in XSD but works in Desktop, add to the Tier 2 known exceptions list in `validate_twb()` and document in `error-codes-and-pitfalls.md`.
+
+---
+
+## Quick Reference: Phase Gates
+
+| Phase | Gate | Condition to proceed |
+|-------|------|---------------------|
+| 1. Requirements | Gate 1 | User confirms requirements summary |
+| 2. ASCII Mockup | Gate 2 | User approves the layout wireframe |
+| 3. Generate TWB | — | Automatic after Gate 2 |
+| 4. Validate | — | `validate_twb()` outputs `Validation PASSED` |
+| 5. Handoff & Iterate | — | Deliver to user; self-learn from user fixes |
+| 6. Knowledge Capture | — | Document all learnings in skill references |
