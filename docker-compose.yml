@@ -1,81 +1,10 @@
-# ───────────────────── Airflow ─────────────────────
-# Common configuration for Airflow services
-x-airflow-common: &airflow-common
-  image: apache/airflow:2.7.0
-  environment:
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/postgres
-    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-    POSTGRES_USER: ${POSTGRES_USER}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  volumes:
-    - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/airflow-data/logs:/opt/airflow/logs
-    - /var/run/docker.sock:/var/run/docker.sock
-  networks:
-    - etl_net
-  depends_on:
-    - postgres_db
-
 services:
-  # ───────────────────── PostgreSQL ─────────────────────
-  postgres_db:
-    container_name: db
-    image: postgres:12
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - etl_net
-
-  airflow-init:
-    <<: *airflow-common
-    container_name: apache_airflow_init
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db upgrade
-        if ! airflow users list --output table | grep -q 'airflow'; then
-          airflow users create --role Admin --username airflow --password ${AIRFLOW_ADMIN_PASSWORD} --email airflow@airflow.com --firstname airflow --lastname airflow
-        fi
-
-  airflow-webserver:
-    <<: *airflow-common
-    container_name: apache_airflow_webserver
-    command: airflow webserver
-    ports:
-      - "8083:8080"
-    restart: always
-
-  airflow-scheduler:
-    <<: *airflow-common
-    container_name: apache_airflow_scheduler
-    command: airflow scheduler
-    restart: always
-
   # ───────────────────── Python ─────────────────────
   python:
     container_name: python_runner
     build: ./python
     volumes:
       - .:/app
-    networks:
-      - etl_net
     command: >
       bash -c "python /app/daily_rates_ingestion.py && sleep infinity"
     restart: always
-
-networks:
-  etl_net:
-    name: etl_net
-    driver: bridge
-
-volumes:
-  postgres_data:

@@ -1,0 +1,305 @@
+NIS Forex Exchange Rate Dashboard — Simplified LLM-Friendly Prompt
+
+═══════════════════════════════════════════════════
+
+DATA SOURCE
+Connect directly to NIS_Exchange_Rates.csv (no published datasource).
+Connection class: textscan — use separate directory and filename attributes.
+Fields: Date, USD, GBP, JPY_100, EUR, CHF, updated_at
+
+═══════════════════════════════════════════════════
+
+PARAMETERS & FILTERS
+- Currency Selector: USD, GBP, JPY_100, EUR, CHF (default: USD)
+- Date Range: Default = last 12 months (Start Date, End Date parameters)
+- Time Granularity: Day / Week / Month / Quarter / Year (default: Day)
+
+Parameter XML attributes:
+- All parameters: role='measure'
+- Date parameters (Start Date, End Date): type='quantitative'
+- String/list parameters (Currency Selector, Time Granularity): type='nominal'
+
+═══════════════════════════════════════════════════
+
+DYNAMIC DATE HANDLING
+
+[Selected Date (Dynamic)]
+Role:   Discrete Dimension
+Type:   Calculated Field (string)
+
+CASE [Parameters].[Parameter 2]
+
+WHEN "Day" THEN
+    STR(YEAR([Date])) + "-" +
+    RIGHT("0" + STR(MONTH([Date])),2) + "-" +
+    RIGHT("0" + STR(DAY([Date])),2)
+
+WHEN "Week" THEN
+    STR(YEAR([Date])) + "-W" +
+    RIGHT("0" + STR(DATEPART('week',[Date])),2)
+
+WHEN "Month" THEN
+    STR(YEAR([Date])) + "-" +
+    RIGHT("0" + STR(MONTH([Date])),2)
+
+WHEN "Quarter" THEN
+    STR(YEAR([Date])) + "-Q" +
+    STR(DATEPART('quarter',[Date]))
+
+WHEN "Year" THEN
+    STR(YEAR([Date]))
+
+END
+
+RULES:
+- datatype = string, role = dimension, type = nominal
+- Column-instance suffix: :nk (nominal), not :ok (ordinal)
+- Use [Selected Date (Dynamic)] as X-axis in ALL time-series charts
+- Formats are year-first (YYYY-MM etc.) so they sort correctly alphabetically
+- Formula must reference [Parameters].[Parameter 2], NOT [Time Granularity]
+
+───────────────────────────────────────────────────
+
+[Period Label]
+Role:   Discrete Dimension
+Type:   Calculated Field (string, alternate format)
+
+CASE [Parameters].[Parameter 2]
+WHEN "Year"    THEN STR(YEAR([Date]))
+WHEN "Quarter" THEN "Q" + STR(DATEPART('quarter',[Date])) + "-" + STR(YEAR([Date]))
+WHEN "Month"   THEN RIGHT("0" + STR(MONTH([Date])), 2) + "-" + STR(YEAR([Date]))
+WHEN "Week"    THEN "W" + RIGHT("0" + STR(DATEPART('week',[Date])), 2) + "-" + STR(YEAR([Date]))
+WHEN "Day"     THEN STR(MONTH([Date])) + "/" + STR(DAY([Date])) + "/" + STR(YEAR([Date]))
+END
+
+NOTE: Period Label uses MM-YYYY display order (human-friendly but does not sort
+chronologically across years). Use Selected Date (Dynamic) for chart axes;
+Period Label for tooltips or manual override in Tableau Desktop.
+
+───────────────────────────────────────────────────
+
+[Period Change %]
+Type: Table calculation (period-over-period)
+Formula:
+ZN((LOOKUP(AVG([Selected Rate]), 0) - LOOKUP(AVG([Selected Rate]), -1))
+   / ABS(LOOKUP(AVG([Selected Rate]), -1)))
+default-format: p1%
+Used by: Period Change Bars (Sheet 9)
+
+[Cumulative % Change]
+Internal name: [Calculation_0697156532551683]
+Type: Table calculation (cumulative from first period)
+Formula:
+ZN(
+    (AVG([Selected Rate]) - LOOKUP(AVG([Selected Rate]), FIRST()))
+    / ABS(LOOKUP(AVG([Selected Rate]), FIRST()))
+)
+Used by: Volatility Line (Sheet 8)
+NOTE: This is NOT the same as Period Change %. Volatility Line shows
+cumulative drift from the starting period, not period-over-period change.
+
+═══════════════════════════════════════════════════
+
+DASHBOARD STRUCTURE (SHEET LAYOUT)
+
+Overall layout:
+- Dashboard size: 1400 x 1700px (fixed)
+- Background: #FFFFFF
+- Top → Bottom flow
+
+───────────────────────────────────────────────────
+
+HEADER (Full Width)
+
+Text zone at the very top:
+- Line 1: "NIS Forex Exchange Rate Dashboard"
+  Font: Tableau Bold 24, fontcolor: #006ce0, fontalignment: center
+- Line 2: "Generated using Claude Code (Tableau Skill)"
+  Font: Tableau Bold 14, fontcolor: #555555, fontalignment: center
+
+───────────────────────────────────────────────────
+
+CONTROLS ROW (Full Width, fixed height ~74px)
+
+Four parameter controls horizontally (mode: compact for list params, datetime for date params):
+- Currency Selector  (compact)
+- Time Granularity   (compact)
+- Start Date         (datetime)
+- End Date           (datetime)
+
+───────────────────────────────────────────────────
+
+KPI ROW (Full Width, fixed height ~160px)
+
+[Sheets 1-4] KPI BAR ROW — 4 cards horizontally (distribute-evenly):
+- KPI Avg Rate       → sheet title: "Avg Exchange Rate"
+- KPI Period High    → sheet title: "Period High"
+- KPI Period Low     → sheet title: "Period Low"
+- KPI Data Points    → sheet title: "Trading Days"
+
+Layout: | KPI 1 | KPI 2 | KPI 3 | KPI 4 |
+
+KPI card requirements:
+- Mark type: Text
+- Value label: customized-label with bold fontsize=20
+- ₪ symbol appended using font: Benton Sans Book, size 10
+- Text alignment: center
+- KPI Period High and Period Low: value and ₪ both in fontcolor=#006ce0
+- KPI Avg Rate and Trading Days: no explicit fontcolor on value
+- Background: #f5f5f5, border: 1px solid #555555, rounded corners (radius=8)
+
+NOTE: Use <customized-label> inside the pane to set font size and ₪ symbol.
+Encode the field reference with three <run> elements: run("<"), run("field_ref"),
+run(">"), then a separate run("₪") in Benton Sans Book size 10.
+
+───────────────────────────────────────────────────
+
+MAIN TREND ROW (Full Width, fixed height ~288px)
+
+[Sheet 5] MAIN TREND LINE
+- Dual-axis line + area chart
+- X-axis: [Selected Date (Dynamic)]
+- Y-axis: AVG(Selected Rate)
+- Rows shelf syntax: (fq(avg_inst) + fq(avg_inst)) — same measure twice creates dual axis
+- Three panes:
+    Pane 0 (Line): thin, mark-color=#006ce0
+    Pane 1 (Line, id=1): thick, mark-color=#006ce0, y-axis-name=avg:SelectedRate
+    Pane 2 (Area, id=2): mark-color=#d0e4f9, transparency=255, y-index=1 (synchronized)
+- No gridlines, no axis title
+
+───────────────────────────────────────────────────
+
+SEASONALITY ROW (2 Columns, distribute-evenly)
+
+LEFT (50%): [Sheet 6] MONTHLY SEASONALITY
+- Bar chart
+- X: Month Name (DATENAME('month', [Date]))
+- Y: AVG(Selected Rate)
+- Mark color: #d0e4f9 fill, #006ce0 stroke
+
+RIGHT (50%): [Sheet 7] DAY-OF-WEEK PATTERN
+- Bar chart
+- X: Day of Week (DATENAME('weekday', [Date]))
+- Y: AVG(Selected Rate)
+- Mark color: #d0e4f9 fill, #006ce0 stroke
+
+───────────────────────────────────────────────────
+
+VOLATILITY ROW (2 Columns, distribute-evenly)
+
+LEFT (50%): [Sheet 8] VOLATILITY LINE
+- Sheet name: "Volatility Line"
+- Line chart
+- X: [Selected Date (Dynamic)]
+- Y: Cumulative % Change ([Calculation_0697156532551683])
+- Mark color: #006ce0
+- Title: "Volatility — Cumulative Change %"
+
+RIGHT (50%): [Sheet 9] PERIOD CHANGE BARS
+- Sheet name: "Period Change Bars"
+- Bar chart
+- X: [Selected Date (Dynamic)]
+- Y: Period Change % ([Calculation_1000000000000000004])
+- Mark color: #d0e4f9 fill, #006ce0 stroke
+- Title: "Period Change Distribution"
+
+───────────────────────────────────────────────────
+
+BOTTOM ROW (Full Width, fixed height ~342px)
+
+[Sheet 10] MULTI-CURRENCY COMPARISON
+- Line chart comparing all 5 currencies
+- X-axis: [Selected Date (Dynamic)]
+- Rows: [Multiple Values] (native Measure Values field)
+- Color: [:Measure Names] (native Measure Names field)
+- Use Measure Names / Measure Values (native Tableau pivot fields)
+- DO NOT manually declare Measure Names or Measure Values in
+  datasource-dependencies — they are native Tableau virtual fields.
+  Declaring them creates a blank duplicate calculated field.
+- Measure Names filter: user:op='manual' goes on the UNION groupfilter,
+  NOT on child member groupfilters
+- Color palette (Measure Names → hex):
+    CHF:     #4e79a7
+    USD:     #59a14f
+    JPY_100: #76b7b2
+    GBP:     #e15759
+    EUR:     #f28e2b
+
+═══════════════════════════════════════════════════
+
+AGGREGATION RULE
+All measures must use AVG only — never SUM.
+Exception: KPI Data Points uses COUNT([Date]).
+
+═══════════════════════════════════════════════════
+
+TOOLTIPS
+Show:
+- AVG rate
+- % change vs previous period
+- Context based on [Selected Date (Dynamic)]
+
+═══════════════════════════════════════════════════
+
+DESIGN
+
+Dashboard
+- Background: #FFFFFF
+- Size: 1400 x 1700px (fixed)
+
+Containers
+- Background: #f5f5f5
+- Border: 1px solid #555555 (dark grey)
+- Rounded corners (corner-radius=8)
+- Consistent padding (8px) and margin (6px)
+
+Fonts
+- Headers: Tableau Bold
+- Labels: Tableau Book
+- KPI ₪ symbol: Benton Sans Book size 10
+
+Color Mapping (charts)
+- Bars: fill #d0e4f9, stroke #006ce0
+- Lines: #006ce0
+- KPI Period High/Low values: #006ce0
+
+Color Mapping (Multi-Currency lines)
+- CHF:     #4e79a7 (blue)
+- USD:     #59a14f (green)
+- JPY_100: #76b7b2 (teal)
+- GBP:     #e15759 (red)
+- EUR:     #f28e2b (orange)
+
+Charts
+- No gridlines (line-visibility=off)
+- No axis titles (display=off)
+- Transparent worksheet background (#00000000)
+- Axis tick color: #b4b4b4 where applicable
+
+═══════════════════════════════════════════════════
+
+BRANDING
+- Footer label: "Created by Niv Levi"
+  Font: Tableau Book size 9, fontcolor=#888888
+
+═══════════════════════════════════════════════════
+
+GOALS
+- Identify currency trends across time granularities
+- Detect seasonal patterns
+- Understand cumulative volatility behavior (Volatility Line)
+- See period-over-period change distribution (Period Change Bars)
+- Compare currencies directly
+- Provide simple, structured KPIs without complex financial modeling
+
+═══════════════════════════════════════════════════
+
+KNOWN PROGRAMMATIC NOTES
+- KPI customized-label CAN be set in TWB XML — use <customized-label> with
+  three <run> elements for the field reference: "<", field_ref, ">", then "₪"
+- Dual-axis on Main Trend Line: put same measure twice on rows shelf as (A + A)
+- Multi-Currency rows shelf uses [Multiple Values], not [avg:Measure Values:qk]
+- user:op='manual' on Measure Names filter goes on UNION groupfilter, not children
+- Default Time Granularity: "Day" (users switch to Month/Quarter as needed)
+- All parameter role='measure' (not 'dimension')
+- Date params: type='quantitative'; list params: type='nominal'
