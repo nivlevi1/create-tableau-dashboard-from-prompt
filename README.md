@@ -5,6 +5,8 @@
 
 Automated pipeline that fetches daily NIS exchange rates and generates a Tableau dashboard from code.
 
+🔗 **[View Live Dashboard on Tableau Public](https://public.tableau.com/app/profile/niv.levi4310/viz/NISForexDashboard-GeneratedfromPrompt/NISForexDashboard)**
+
 ## Background
 
 The Israeli Shekel has undergone remarkable swings over the decades — from a period when the [Shekel-Dollar rate dipped below ₪3 to the dollar](https://en.globes.co.il/en/article-shekel-dollar-rate-dips-below-nis-3-1001540198) to the significant depreciation pressures seen more recently during periods of geopolitical uncertainty.
